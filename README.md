@@ -15,6 +15,7 @@ The menu is drawn with the game's own interface art and HelvetiHand handwriting 
 - **Levels**: load any episode map with the same seamless map change the game uses between scenes, stream its rooms in or out, and back up saves. Story scripting from earlier scenes does not run, so loaded maps are for exploring.
 - **Inspector**: browse level actors, every live object or every type, and edit properties in place.
 - **Console**: run any exec function from the controller, cheat manager, HUD or viewport with typed arguments. Includes autocomplete and history; anything else goes to the engine console.
+- **Discord Rich Presence**: shows the episode and location you are playing, a session timer, and that the game is hooked with LISUtils.
 - **SDK dump**: writes every loaded class and struct, with offsets and function signatures, to a text file.
 
 ## Install
@@ -22,6 +23,8 @@ The menu is drawn with the game's own interface art and HelvetiHand handwriting 
 1. Download `dinput8.dll` from the latest release.
 2. Copy it into `Life Is Strange\Binaries\Win32`, next to `LifeIsStrange.exe`.
 3. Start the game and press `Insert`.
+
+To show your game in Discord, create an application named "Life Is Strange" at [discord.com/developers/applications](https://discord.com/developers/applications) and paste its Application ID into Settings > Discord.
 
 To uninstall, delete `dinput8.dll`. Settings, logs and saved positions are kept next to the DLL in `LISUtils.ini`, `LISUtils.log` and `LISUtils_positions.ini`.
 

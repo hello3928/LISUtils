@@ -72,10 +72,11 @@ bool IsHostProcess() {
 App::Features::Features(features::Context& context)
     : time(context), freecam(context), photo(context, freecam, time), teleport(context, freecam), character(context),
       inspector(context, freecam, teleport, character), console(context), levels(context), cinematics(context),
-      dumper(context) {}
+      dumper(context), presence(context, freecam, photo) {}
 
-std::array<features::Feature*, 10> App::Features::All() noexcept {
-    return {&time, &freecam, &photo, &teleport, &character, &inspector, &console, &levels, &cinematics, &dumper};
+std::array<features::Feature*, 11> App::Features::All() noexcept {
+    return {&time,    &freecam, &photo,      &teleport, &character, &inspector,
+            &console, &levels,  &cinematics, &dumper,   &presence};
 }
 
 App::App()
@@ -534,6 +535,9 @@ void App::DrawSettings() {
     if (ImGui::Checkbox("Show active modes on screen", &showStatus_)) {
         settings_.SetBool(kInterfaceSection, L"ShowStatus", showStatus_);
     }
+
+    ui::SectionTitle("Discord");
+    features_->presence.Draw();
 
     ui::SectionTitle("SDK dump");
     features_->dumper.Draw();

@@ -12,6 +12,7 @@
 #include "features/Inspector.h"
 #include "features/LevelLoader.h"
 #include "features/PhotoMode.h"
+#include "features/Presence.h"
 #include "features/Teleport.h"
 #include "features/TimeControl.h"
 #include "render/D3D9Hook.h"
@@ -82,9 +83,10 @@ private:
         features::LevelLoader levels;
         features::Cinematics cinematics;
         features::Dumper dumper;
+        features::Presence presence;
 
         explicit Features(features::Context& context);
-        [[nodiscard]] std::array<features::Feature*, 10> All() noexcept;
+        [[nodiscard]] std::array<features::Feature*, 11> All() noexcept;
     };
 
     void Run();

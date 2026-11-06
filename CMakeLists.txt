@@ -28,6 +28,7 @@ add_library(lisutils SHARED
     src/core/Text.cpp
     src/proxy/DInput8Proxy.cpp
     src/proxy/Exports.def
+    src/presence/DiscordClient.cpp
     src/render/D3D9Hook.cpp
     src/render/DirectInputHook.cpp
     src/render/InputRouter.cpp
@@ -49,6 +50,7 @@ add_library(lisutils SHARED
     src/features/Inspector.cpp
     src/features/LevelLoader.cpp
     src/features/PhotoMode.cpp
+    src/features/Presence.cpp
     src/features/Teleport.cpp
     src/features/TimeControl.cpp
 )
