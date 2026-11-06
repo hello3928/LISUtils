@@ -29,6 +29,8 @@ std::expected<Game, std::string> Game::Resolve() {
     types.gameEngine = schema.Class("Engine.GameEngine");
     types.player = schema.Class("Engine.Player");
     types.viewportClient = schema.Class("Engine.GameViewportClient");
+    types.levelStreaming = schema.Class("Engine.LevelStreaming");
+    types.levelStreamingPersistent = schema.Class("Engine.LevelStreamingPersistent");
 
     GameMembers& members = game.members_;
     members.enginePlayers = schema.Field<TArray<UObject*>>(types.gameEngine, "GamePlayers");
@@ -41,6 +43,8 @@ std::expected<Game, std::string> Game::Resolve() {
     members.actorWorldInfo = schema.Field<UObject*>(types.actor, "WorldInfo");
     members.actorLocation = schema.Field<FVector>(types.actor, "Location");
     members.actorRotation = schema.Field<FRotator>(types.actor, "Rotation");
+    members.worldStreamingLevels = schema.Field<TArray<UObject*>>(types.worldInfo, "StreamingLevels");
+    members.streamingPackageName = schema.Field<FName>(types.levelStreaming, "PackageName");
 
     GameFunctions& functions = game.functions_;
     functions.setLocation = schema.Function(types.actor, "SetLocation");
@@ -109,7 +113,15 @@ UObject* Game::WorldInfo() const {
 
 std::string Game::MapName() const {
     UObject* worldInfo = WorldInfo();
-    return worldInfo != nullptr ? worldInfo->Package()->Name() : std::string();
+    if (worldInfo == nullptr) {
+        return {};
+    }
+    for (UObject* level : members_.worldStreamingLevels.Of(worldInfo).View()) {
+        if (IsAlive(level) && level->klass == classes_.levelStreamingPersistent) {
+            return members_.streamingPackageName.Of(level).ToString();
+        }
+    }
+    return worldInfo->Package()->Name();
 }
 
 bool Game::SetLocation(UObject* actor, const FVector& location) const {

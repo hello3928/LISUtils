@@ -70,11 +70,12 @@ bool IsHostProcess() {
 }
 
 App::Features::Features(features::Context& context)
-    : time(context), freecam(context), photo(context, freecam, time), teleport(context, freecam),
-      inspector(context, freecam, teleport), console(context), levels(context), cinematics(context), dumper(context) {}
+    : time(context), freecam(context), photo(context, freecam, time), teleport(context, freecam), character(context),
+      inspector(context, freecam, teleport, character), console(context), levels(context), cinematics(context),
+      dumper(context) {}
 
-std::array<features::Feature*, 9> App::Features::All() noexcept {
-    return {&time, &freecam, &photo, &teleport, &inspector, &console, &levels, &cinematics, &dumper};
+std::array<features::Feature*, 10> App::Features::All() noexcept {
+    return {&time, &freecam, &photo, &teleport, &character, &inspector, &console, &levels, &cinematics, &dumper};
 }
 
 App::App()
@@ -456,6 +457,8 @@ void App::DrawSection() {
     case Section::Player:
         ui::SectionTitle("Player");
         features.teleport.Draw();
+        ui::SectionTitle("Size and speed");
+        features.character.Draw();
         break;
     case Section::World:
         ui::SectionTitle("Time");

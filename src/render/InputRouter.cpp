@@ -96,26 +96,25 @@ void InputRouter::FilterDeviceState(DeviceKind kind, DWORD size, void* data) noe
     }
 }
 
-void InputRouter::FilterDeviceData(DeviceKind kind, DWORD objectSize, DIDEVICEOBJECTDATA* data, DWORD* count) noexcept {
-    if (count == nullptr) {
+void InputRouter::RecordDeviceData(DeviceKind kind, DWORD objectSize, const DIDEVICEOBJECTDATA* data,
+                                   DWORD count) noexcept {
+    if (kind != DeviceKind::Mouse || data == nullptr) {
         return;
     }
-    if (kind == DeviceKind::Mouse && data != nullptr) {
-        auto* cursor = reinterpret_cast<std::byte*>(data);
-        for (DWORD index = 0; index < *count; ++index, cursor += objectSize) {
-            const auto* entry = reinterpret_cast<const DIDEVICEOBJECTDATA*>(cursor);
-            if (entry->dwOfs == DIMOFS_X) {
-                mouseX_.fetch_add(static_cast<LONG>(entry->dwData));
-            } else if (entry->dwOfs == DIMOFS_Y) {
-                mouseY_.fetch_add(static_cast<LONG>(entry->dwData));
-            }
+    const auto* cursor = reinterpret_cast<const std::byte*>(data);
+    for (DWORD index = 0; index < count; ++index, cursor += objectSize) {
+        const auto* entry = reinterpret_cast<const DIDEVICEOBJECTDATA*>(cursor);
+        if (entry->dwOfs == DIMOFS_X) {
+            mouseX_.fetch_add(static_cast<LONG>(entry->dwData));
+        } else if (entry->dwOfs == DIMOFS_Y) {
+            mouseY_.fetch_add(static_cast<LONG>(entry->dwData));
         }
     }
+}
+
+bool InputRouter::IsBlocked(DeviceKind kind) const noexcept {
     const InputBlock block = EffectiveBlock();
-    const bool blocked = (kind == DeviceKind::Mouse && block.mouse) || (kind == DeviceKind::Keyboard && block.keyboard);
-    if (blocked) {
-        *count = 0;
-    }
+    return (kind == DeviceKind::Mouse && block.mouse) || (kind == DeviceKind::Keyboard && block.keyboard);
 }
 
 LRESULT CALLBACK InputRouter::WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam) {

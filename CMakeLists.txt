@@ -41,6 +41,7 @@ add_library(lisutils SHARED
     src/ui/Overlay.cpp
     src/ui/Theme.cpp
     src/ui/Widgets.cpp
+    src/features/Character.cpp
     src/features/Cinematics.cpp
     src/features/Console.cpp
     src/features/Dumper.cpp

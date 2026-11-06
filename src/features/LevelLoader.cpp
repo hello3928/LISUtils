@@ -3,6 +3,7 @@
 #include "core/Log.h"
 #include "core/Paths.h"
 #include "core/Text.h"
+#include "ue/Globals.h"
 #include "ue/Invoke.h"
 #include "ue/Reflection.h"
 #include "ui/Theme.h"
@@ -11,7 +12,6 @@
 #include <imgui_stdlib.h>
 
 #include <algorithm>
-#include <chrono>
 #include <format>
 #include <regex>
 #include <system_error>
@@ -21,6 +21,8 @@ namespace lis::features {
 namespace {
 
 constexpr float kListHeight = 220.0F;
+constexpr std::chrono::seconds kPrepareTimeout{90};
+constexpr std::chrono::seconds kStreamingTimeout{60};
 
 std::filesystem::path CookedDirectory() {
     return core::GameRootDirectory() / L"LifeIsStrangeGame" / L"CookedPCConsoleFinal";
@@ -30,34 +32,144 @@ std::filesystem::path CookedDirectory() {
 
 LevelLoader::LevelLoader(Context& context) : Feature(context) {
     ue::SchemaBuilder schema;
-    ue::UClass* streamingClass = schema.Class("Engine.LevelStreaming");
-    streaming_.levels = schema.Field<ue::TArray<ue::UObject*>>(Game().Classes().worldInfo, "StreamingLevels");
-    streaming_.packageName = schema.Field<ue::FName>(streamingClass, "PackageName");
-    streaming_.loadedLevel = schema.Field<ue::UObject*>(streamingClass, "LoadedLevel");
-    streaming_.shouldBeLoaded = schema.Flag(streamingClass, "bShouldBeLoaded");
-    streaming_.shouldBeVisible = schema.Flag(streamingClass, "bShouldBeVisible");
-    streaming_.available = schema.Ok();
+    const ue::GameClasses& classes = Game().Classes();
+    streaming_.packageName = schema.Field<ue::FName>(classes.levelStreaming, "PackageName");
+    streaming_.loadedLevel = schema.Field<ue::UObject*>(classes.levelStreaming, "LoadedLevel");
+    streaming_.shouldBeLoaded = schema.Flag(classes.levelStreaming, "bShouldBeLoaded");
+    streaming_.shouldBeVisible = schema.Flag(classes.levelStreaming, "bShouldBeVisible");
+    streaming_.isVisible = schema.Flag(classes.levelStreaming, "bIsVisible");
+    mapChange_.prepare = schema.Function(classes.worldInfo, "PrepareMapChange");
+    mapChange_.isReady = schema.Function(classes.worldInfo, "IsMapChangeReady");
+    mapChange_.commit = schema.Function(classes.worldInfo, "CommitMapChange");
     if (auto finished = schema.Finish(); !finished) {
-        core::Log::Warning("level streaming controls disabled: {}", finished.error());
+        MarkUnavailable(finished.error());
+        return;
     }
-    ScanPackages();
+    ScanMaps();
 }
 
-void LevelLoader::ScanPackages() {
-    const std::regex persistentMap(R"(^E\d+_\d+[A-Za-z]+$)");
+void LevelLoader::ScanMaps() {
+    const std::regex episodeMap(R"(^E\d+_\d+[A-Za-z]+$)");
     std::error_code error;
     for (const auto& entry : std::filesystem::directory_iterator(CookedDirectory(), error)) {
-        if (entry.path().extension() != L".upk") {
-            continue;
-        }
         std::string name = core::ToUtf8(entry.path().stem().wstring());
-        if (std::regex_match(name, persistentMap)) {
-            maps_.push_back(name);
+        if (entry.path().extension() == L".upk" && std::regex_match(name, episodeMap)) {
+            maps_.push_back(std::move(name));
         }
-        packages_.push_back(std::move(name));
     }
     std::ranges::sort(maps_);
-    std::ranges::sort(packages_);
+}
+
+bool LevelLoader::IsGameplayWorld() const {
+    ue::UObject* worldInfo = Game().WorldInfo();
+    if (worldInfo == nullptr) {
+        return false;
+    }
+    const auto& levels = Game().Members().worldStreamingLevels.Of(worldInfo);
+    return std::ranges::any_of(levels.View(), [this](const ue::UObject* level) {
+        return ue::IsAlive(level) && level->klass == Game().Classes().levelStreamingPersistent;
+    });
+}
+
+std::vector<ue::UObject*> LevelLoader::SubLevelsOf(const std::string& map) const {
+    std::vector<ue::UObject*> levels;
+    ue::UObject* worldInfo = Game().WorldInfo();
+    if (worldInfo == nullptr) {
+        return levels;
+    }
+    for (ue::UObject* level : Game().Members().worldStreamingLevels.Of(worldInfo).View()) {
+        if (ue::IsAlive(level) && level->klass != Game().Classes().levelStreamingPersistent &&
+            core::EqualsInsensitive(level->Package()->Name(), map)) {
+            levels.push_back(level);
+        }
+    }
+    return levels;
+}
+
+void LevelLoader::Begin(const std::string& map) {
+    if (stage_ != Stage::Idle) {
+        return;
+    }
+    if (!IsGameplayWorld()) {
+        status_ = "Load a save from the main menu first; maps can only be swapped during gameplay.";
+        return;
+    }
+    const auto name = ue::FName::Find(map);
+    if (!name) {
+        status_ = std::format("{} is not known to the game yet.", map);
+        return;
+    }
+    pendingNames_ = {*name};
+    ue::ParameterBlock parameters(mapChange_.prepare);
+    auto& names = parameters.At<ue::TArray<ue::FName>>(0);
+    names.data = pendingNames_.data();
+    names.count = static_cast<std::int32_t>(pendingNames_.size());
+    names.capacity = names.count;
+    ue::Invoke(Game().WorldInfo(), mapChange_.prepare, parameters);
+    target_ = map;
+    stage_ = Stage::Preparing;
+    stageStarted_ = std::chrono::steady_clock::now();
+    status_ = std::format("Loading {}...", map);
+    core::Log::Info("map change to {} started", map);
+}
+
+void LevelLoader::Tick(float) {
+    if (!IsAvailable()) {
+        return;
+    }
+    switch (stage_) {
+    case Stage::Preparing:
+        WaitForPreparation();
+        break;
+    case Stage::Streaming:
+        StreamSubLevels();
+        break;
+    case Stage::Idle:
+        break;
+    }
+}
+
+void LevelLoader::WaitForPreparation() {
+    ue::UObject* worldInfo = Game().WorldInfo();
+    if (worldInfo == nullptr) {
+        return;
+    }
+    ue::ParameterBlock ready(mapChange_.isReady);
+    ue::Invoke(worldInfo, mapChange_.isReady, ready);
+    if ((ready.Return<std::uint32_t>() & 1U) == 0) {
+        if (std::chrono::steady_clock::now() - stageStarted_ > kPrepareTimeout) {
+            Finish(std::format("{} did not finish loading in time.", target_));
+        }
+        return;
+    }
+    ue::Invoke(worldInfo, mapChange_.commit);
+    stage_ = Stage::Streaming;
+    stageStarted_ = std::chrono::steady_clock::now();
+    status_ = std::format("Streaming the rooms of {}...", target_);
+}
+
+void LevelLoader::StreamSubLevels() {
+    const std::vector<ue::UObject*> levels = SubLevelsOf(target_);
+    std::size_t visible = 0;
+    for (ue::UObject* level : levels) {
+        streaming_.shouldBeLoaded.Set(level, true);
+        streaming_.shouldBeVisible.Set(level, true);
+        visible += streaming_.isVisible.Get(level) ? 1 : 0;
+    }
+    status_ = std::format("Streaming the rooms of {}: {} of {} ready", target_, visible, levels.size());
+    const bool complete = !levels.empty() && visible == levels.size();
+    if (complete || std::chrono::steady_clock::now() - stageStarted_ > kStreamingTimeout) {
+        Finish(std::format("Loaded {} ({} of {} rooms). The story state is not set up for this scene, and Max keeps "
+                           "his previous position; use the freecam to explore or walk to an interaction.",
+                           target_, visible, levels.size()));
+    }
+}
+
+void LevelLoader::Finish(std::string status) {
+    status_ = std::move(status);
+    core::Log::Info("{}", status_);
+    stage_ = Stage::Idle;
+    pendingNames_.clear();
 }
 
 void LevelLoader::DrawPanel() {
@@ -67,24 +179,22 @@ void LevelLoader::DrawPanel() {
     }
     DrawMaps();
     DrawStreaming();
-    DrawStory();
+    DrawSaves();
 }
 
 void LevelLoader::DrawMaps() {
     ui::Subheading("Maps");
     ImGui::SetNextItemWidth(ui::FieldWidth());
     ImGui::InputTextWithHint("##mapFilter", "Filter", &mapFilter_);
-    ImGui::SameLine();
-    ImGui::Checkbox("All packages", &showAllPackages_);
-    const std::vector<std::string>& source = showAllPackages_ ? packages_ : maps_;
+    ImGui::BeginDisabled(stage_ != Stage::Idle);
     if (ImGui::BeginChild("maps", {0.0F, kListHeight}, ImGuiChildFlags_Borders)) {
-        for (const std::string& map : source) {
+        for (const std::string& map : maps_) {
             if (!core::ContainsInsensitive(map, mapFilter_)) {
                 continue;
             }
             ImGui::PushID(map.c_str());
-            if (ImGui::SmallButton("Open")) {
-                pendingMap_ = map;
+            if (ImGui::SmallButton("Load")) {
+                Services().actions.Post([this, map] { Begin(map); });
             }
             ImGui::SameLine();
             ImGui::TextUnformatted(map.c_str());
@@ -92,45 +202,19 @@ void LevelLoader::DrawMaps() {
         }
     }
     ImGui::EndChild();
-    DrawOpenConfirmation();
-}
-
-void LevelLoader::DrawOpenConfirmation() {
-    constexpr const char* kPopup = "Open map";
-    if (!pendingMap_.empty() && !ImGui::IsPopupOpen(kPopup)) {
-        ImGui::OpenPopup(kPopup);
-    }
-    if (!ImGui::BeginPopupModal(kPopup, nullptr,
-                                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
-        return;
-    }
-    ImGui::Text("Open %s?", pendingMap_.c_str());
-    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 26.0F);
-    ui::StatusText("Loading a map outside the story flow can crash the game with a fatal error. Save your progress "
-                   "first.",
-                   ui::palette::kWarning);
-    ImGui::PopTextWrapPos();
-    if (ImGui::Button("Open anyway")) {
-        Services().actions.Post([this, map = pendingMap_] { OpenMap(map); });
-        pendingMap_.clear();
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
-        pendingMap_.clear();
-        ImGui::CloseCurrentPopup();
-    }
-    ImGui::EndPopup();
+    ImGui::EndDisabled();
+    ui::Hint("Maps are swapped the same way the game moves between scenes, so it stays stable. Scripted story events "
+             "from earlier scenes will not have run.");
 }
 
 void LevelLoader::DrawStreaming() {
-    ui::Subheading("Streaming levels");
+    ui::Subheading("Rooms in this map");
     ue::UObject* worldInfo = Game().WorldInfo();
-    if (!streaming_.available || worldInfo == nullptr) {
+    if (worldInfo == nullptr) {
         ui::Hint("Streaming information is not available here.");
         return;
     }
-    const ue::TArray<ue::UObject*>& levels = streaming_.levels.Of(worldInfo);
+    const ue::TArray<ue::UObject*>& levels = Game().Members().worldStreamingLevels.Of(worldInfo);
     if (!ImGui::BeginTable("streaming", 3,
                            ImGuiTableFlags_RowBg | ImGuiTableFlags_ScrollY | ImGuiTableFlags_SizingStretchProp,
                            {0.0F, kListHeight})) {
@@ -142,7 +226,7 @@ void LevelLoader::DrawStreaming() {
     ImGui::TableSetupColumn("Visible", ImGuiTableColumnFlags_WidthFixed);
     ImGui::TableHeadersRow();
     for (ue::UObject* level : levels.View()) {
-        if (level == nullptr) {
+        if (!ue::IsAlive(level)) {
             continue;
         }
         ImGui::PushID(level);
@@ -166,65 +250,12 @@ void LevelLoader::DrawStreaming() {
     ImGui::EndTable();
 }
 
-void LevelLoader::DrawStory() {
-    ui::Subheading("Story and checkpoints");
-    if (ImGui::Button("Save checkpoint")) {
-        Services().actions.Post([this] { CallControllerCommand("DebugSaveCheckpoint"); });
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Load checkpoint")) {
-        Services().actions.Post([this] { CallControllerCommand("DebugLoadCheckpoint"); });
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Restart level")) {
-        Services().actions.Post([this] { CallControllerCommand("RestartAllLevel"); });
-    }
-    ImGui::SameLine();
-    if (ImGui::Button("Developer menu")) {
-        Services().actions.Post([this] { CallControllerCommand("ToggleDebugMenu"); });
-    }
-
-    ImGui::SetNextItemWidth(ui::FieldWidth());
-    const bool submitted =
-        ImGui::InputTextWithHint("##fact", "Fact name", &factName_, ImGuiInputTextFlags_EnterReturnsTrue);
-    ImGui::SameLine();
-    if ((ImGui::Button("Toggle fact") || submitted) && !factName_.empty()) {
-        Services().actions.Post([this, fact = factName_] { ToggleFact(fact); });
-    }
+void LevelLoader::DrawSaves() {
+    ui::Subheading("Saves");
     if (ImGui::Button("Back up saves")) {
         BackupSaves();
     }
-    ui::Hint("Back up your saves before changing facts or checkpoints. Backups are written next to the Saves folder.");
-}
-
-void LevelLoader::OpenMap(const std::string& map) {
-    status_ = std::format("Opening {}", map);
-    Game().ConsoleCommand(core::ToWide(std::format("open {}", map)));
-}
-
-void LevelLoader::CallControllerCommand(std::string_view name) {
-    ue::UObject* controller = Game().PlayerController();
-    ue::UFunction* function = controller != nullptr ? ue::FindFunction(controller->klass, name) : nullptr;
-    if (function == nullptr) {
-        status_ = std::format("{} is not available on the current controller", name);
-        return;
-    }
-    ue::Invoke(controller, function);
-    status_ = std::format("Ran {}", name);
-}
-
-void LevelLoader::ToggleFact(const std::string& fact) {
-    ue::UObject* controller = Game().PlayerController();
-    ue::UFunction* function = controller != nullptr ? ue::FindFunction(controller->klass, "ToggleFact") : nullptr;
-    const auto name = ue::FName::Find(fact);
-    if (function == nullptr || !name) {
-        status_ = function == nullptr ? "ToggleFact is not available" : std::format("Unknown fact '{}'", fact);
-        return;
-    }
-    ue::ParameterBlock parameters(function);
-    parameters.At<ue::FName>(0) = *name;
-    ue::Invoke(controller, function, parameters);
-    status_ = std::format("Toggled fact {}", fact);
+    ui::Hint("Copies the Saves folder next to itself with a timestamp.");
 }
 
 void LevelLoader::BackupSaves() {

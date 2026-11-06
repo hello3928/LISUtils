@@ -64,7 +64,9 @@ void KeyHint(std::string_view key, std::string_view action) {
 
 void StatusText(std::string_view text, const ImVec4& color) {
     ImGui::PushStyleColor(ImGuiCol_Text, color);
+    ImGui::PushTextWrapPos(0.0F);
     ImGui::TextUnformatted(text.data(), text.data() + text.size());
+    ImGui::PopTextWrapPos();
     ImGui::PopStyleColor();
 }
 

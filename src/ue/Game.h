@@ -21,6 +21,8 @@ struct GameClasses {
     UClass* gameEngine = nullptr;
     UClass* player = nullptr;
     UClass* viewportClient = nullptr;
+    UClass* levelStreaming = nullptr;
+    UClass* levelStreamingPersistent = nullptr;
 };
 
 struct GameMembers {
@@ -34,6 +36,8 @@ struct GameMembers {
     Member<UObject*> actorWorldInfo;
     Member<FVector> actorLocation;
     Member<FRotator> actorRotation;
+    Member<TArray<UObject*>> worldStreamingLevels;
+    Member<FName> streamingPackageName;
 };
 
 struct GameFunctions {

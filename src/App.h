@@ -3,6 +3,7 @@
 #include "assets/GameAssets.h"
 #include "core/ActionQueue.h"
 #include "core/Config.h"
+#include "features/Character.h"
 #include "features/Cinematics.h"
 #include "features/Console.h"
 #include "features/Dumper.h"
@@ -75,6 +76,7 @@ private:
         features::Freecam freecam;
         features::PhotoMode photo;
         features::Teleport teleport;
+        features::Character character;
         features::Inspector inspector;
         features::Console console;
         features::LevelLoader levels;
@@ -82,7 +84,7 @@ private:
         features::Dumper dumper;
 
         explicit Features(features::Context& context);
-        [[nodiscard]] std::array<features::Feature*, 9> All() noexcept;
+        [[nodiscard]] std::array<features::Feature*, 10> All() noexcept;
     };
 
     void Run();

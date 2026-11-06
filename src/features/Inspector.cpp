@@ -37,8 +37,9 @@ std::string StructName(const ue::UProperty* property) {
 
 }
 
-Inspector::Inspector(Context& context, Freecam& freecam, Teleport& teleport)
-    : Feature(context), freecam_(freecam), teleport_(teleport), levelClass_(ue::FindClass("Engine.Level")) {}
+Inspector::Inspector(Context& context, Freecam& freecam, Teleport& teleport, Character& character)
+    : Feature(context), freecam_(freecam), teleport_(teleport), character_(character),
+      levelClass_(ue::FindClass("Engine.Level")) {}
 
 void Inspector::Select(ue::UObject* object) {
     if (!ue::IsAlive(object) || object == selection_.object) {
@@ -208,6 +209,15 @@ void Inspector::DrawHeader(ue::UObject* object) {
             freecam_.MoveTo(location);
         }
         ImGui::EndDisabled();
+        float scale = character_.ScaleOf(object);
+        ImGui::SetNextItemWidth(ImGui::GetFontSize() * 6.0F);
+        if (ImGui::InputFloat("Size", &scale, 0.1F, 0.5F, "%.2f", ImGuiInputTextFlags_EnterReturnsTrue)) {
+            Services().actions.Post([this, object, index = object->index, scale] {
+                if (ue::IsAlive(object, index)) {
+                    character_.SetScale(object, scale);
+                }
+            });
+        }
     }
     ImGui::Separator();
 }

@@ -134,10 +134,24 @@ HRESULT WINAPI DirectInputHook::GetDeviceDataDetour(IDirectInputDevice8W* device
                                                     LPDIDEVICEOBJECTDATA data, LPDWORD count, DWORD flags) {
     DirectInputHook* self = current;
     const auto original = OriginalFor<GetDeviceDataFunction>(self->dataHooks_, VirtualSlot(device, kGetDeviceDataSlot));
+    const DWORD capacity = count != nullptr ? *count : 0;
     const HRESULT result = original(device, objectSize, data, count, flags);
-    if (SUCCEEDED(result) && (flags & DIGDD_PEEK) == 0) {
-        self->router_.FilterDeviceData(self->Classify(device), objectSize, data, count);
+    if (FAILED(result) || count == nullptr || (flags & DIGDD_PEEK) != 0) {
+        return result;
     }
+    const DeviceKind kind = self->Classify(device);
+    self->router_.RecordDeviceData(kind, objectSize, data, *count);
+    if (!self->router_.IsBlocked(kind)) {
+        return result;
+    }
+    for (DWORD read = *count; data != nullptr && capacity > 0 && read == capacity;) {
+        read = capacity;
+        if (FAILED(original(device, objectSize, data, &read, flags))) {
+            break;
+        }
+        self->router_.RecordDeviceData(kind, objectSize, data, read);
+    }
+    *count = 0;
     return result;
 }
 

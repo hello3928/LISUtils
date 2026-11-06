@@ -65,6 +65,7 @@ private:
     std::vector<SavedPosition> positions_;
     std::string positionsMap_;
     std::string newPositionName_;
+    std::string status_;
     ue::FVector editLocation_;
     CollisionState savedCollision_;
     ue::UObject* noclipPawn_ = nullptr;

@@ -5,6 +5,7 @@
 #include "ue/Globals.h"
 #include "ue/Invoke.h"
 #include "ue/Reflection.h"
+#include "ui/Theme.h"
 
 #include <imgui.h>
 #include <imgui_stdlib.h>
@@ -24,6 +25,9 @@ constexpr wchar_t kSection[] = L"Player";
 constexpr float kFastMultiplier = 4.0F;
 constexpr float kMinimumNoclipSpeed = 50.0F;
 constexpr float kMaximumNoclipSpeed = 5000.0F;
+constexpr std::string_view kMoveRefused =
+    "The game's character physics refused to move Max here. Life is Strange moves the player through its own "
+    "PhysX controller, which this build cannot drive yet.";
 constexpr ImGuiWindowFlags kHudFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
                                        ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
                                        ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
@@ -129,7 +133,10 @@ void Teleport::MoveNoclip(ue::UObject* pawn, float deltaSeconds) {
     location.x += (std::cos(yaw) * forward - std::sin(yaw) * right) * step;
     location.y += (std::sin(yaw) * forward + std::cos(yaw) * right) * step;
     location.z += up * step;
-    Game().SetLocation(pawn, location);
+    if (!Game().SetLocation(pawn, location)) {
+        SetNoclip(false);
+        status_ = kMoveRefused;
+    }
 }
 
 void Teleport::SetCollision(ue::UObject* pawn, bool collideActors, bool blockActors) {
@@ -187,13 +194,22 @@ bool Teleport::MoveTo(const ue::FVector& location) {
         return false;
     }
     if (Game().SetLocation(pawn, location)) {
+        status_.clear();
         return true;
     }
+    const bool collideWorld = collideWorld_.Get(pawn);
     const bool collideActors = collideActors_.Get(pawn);
     const bool blockActors = blockActors_.Get(pawn);
     SetCollision(pawn, false, false);
+    collideWorld_.Set(pawn, false);
     const bool moved = Game().SetLocation(pawn, location);
+    collideWorld_.Set(pawn, collideWorld);
     SetCollision(pawn, collideActors, blockActors);
+    if (moved) {
+        status_.clear();
+    } else {
+        status_ = kMoveRefused;
+    }
     return moved;
 }
 
@@ -251,6 +267,9 @@ void Teleport::DrawPanel() {
     ImGui::SameLine();
     if (ImGui::SmallButton("Copy")) {
         ImGui::SetClipboardText(std::format("{:.1f} {:.1f} {:.1f}", current.x, current.y, current.z).c_str());
+    }
+    if (!status_.empty()) {
+        ui::StatusText(status_, ui::palette::kWarning);
     }
 
     ui::DragVector("Target", editLocation_, 2.0F);

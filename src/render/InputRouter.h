@@ -49,7 +49,8 @@ public:
     [[nodiscard]] bool IsWindowFocused() const noexcept;
 
     void FilterDeviceState(DeviceKind kind, DWORD size, void* data) noexcept;
-    void FilterDeviceData(DeviceKind kind, DWORD objectSize, DIDEVICEOBJECTDATA* data, DWORD* count) noexcept;
+    void RecordDeviceData(DeviceKind kind, DWORD objectSize, const DIDEVICEOBJECTDATA* data, DWORD count) noexcept;
+    [[nodiscard]] bool IsBlocked(DeviceKind kind) const noexcept;
 
 private:
     static LRESULT CALLBACK WindowProc(HWND window, UINT message, WPARAM wParam, LPARAM lParam);

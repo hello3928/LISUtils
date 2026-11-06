@@ -1,5 +1,6 @@
 #pragma once
 
+#include "features/Character.h"
 #include "features/Feature.h"
 #include "features/Freecam.h"
 #include "features/Teleport.h"
@@ -12,7 +13,7 @@ namespace lis::features {
 
 class Inspector final : public Feature {
 public:
-    Inspector(Context& context, Freecam& freecam, Teleport& teleport);
+    Inspector(Context& context, Freecam& freecam, Teleport& teleport, Character& character);
 
     [[nodiscard]] const char* Name() const noexcept override { return "Inspector"; }
 
@@ -52,6 +53,7 @@ private:
 
     Freecam& freecam_;
     Teleport& teleport_;
+    Character& character_;
     ue::UClass* levelClass_ = nullptr;
 
     std::vector<Entry> entries_;
