@@ -1,0 +1,27 @@
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: Latest
+IndentWidth: 4
+ColumnLimit: 120
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLambdasOnASingleLine: Inline
+AlwaysBreakTemplateDeclarations: Yes
+BreakBeforeBraces: Attach
+DerivePointerAlignment: false
+PointerAlignment: Left
+FixNamespaceComments: false
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^"'
+    Priority: 1
+  - Regex: '^<(imgui|MinHook)'
+    Priority: 2
+  - Regex: '^<(Windows|d3d9|dinput)'
+    Priority: 3
+  - Regex: '^<'
+    Priority: 4
+NamespaceIndentation: None
+SortIncludes: CaseSensitive
+SpaceAfterTemplateKeyword: true

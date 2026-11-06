@@ -1,0 +1,8 @@
+/build/
+/out/
+/.vs/
+/.vscode/
+/.idea/
+*.user
+*.aps
+compile_commands.json
