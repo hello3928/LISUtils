@@ -1,5 +1,6 @@
 #pragma once
 
+#include "assets/GameAssets.h"
 #include "render/D3D9Hook.h"
 #include "render/InputRouter.h"
 
@@ -10,6 +11,7 @@
 #include <filesystem>
 #include <functional>
 #include <mutex>
+#include <optional>
 #include <string>
 
 struct ImGuiContext;
@@ -28,12 +30,13 @@ public:
     void OnPresent(IDirect3DDevice9* device);
     void OnReset(IDirect3DDevice9* device, render::ResetStage stage, bool succeeded);
 
-    [[nodiscard]] bool EnsureInitialized();
+    [[nodiscard]] bool EnsureInitialized(const std::optional<assets::FontSource>& handwriting);
     void Frame(const std::function<void()>& draw);
 
     void SetVisible(bool visible) noexcept;
     void ToggleVisible() noexcept { SetVisible(!visible_); }
     [[nodiscard]] bool IsVisible() const noexcept { return visible_; }
+    [[nodiscard]] bool IsInitialized() const noexcept { return contextReady_.load(); }
     [[nodiscard]] bool WantsTextInput() const noexcept { return wantsTextInput_; }
 
     void SetScale(float scale) noexcept;

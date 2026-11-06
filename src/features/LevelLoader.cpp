@@ -63,7 +63,7 @@ void LevelLoader::ScanPackages() {
 void LevelLoader::DrawPanel() {
     ImGui::Text("Current map: %s", Game().MapName().c_str());
     if (!status_.empty()) {
-        ui::StatusText(status_, ui::palette::kMuted);
+        ui::Hint(status_);
     }
     DrawMaps();
     DrawStreaming();
@@ -150,7 +150,7 @@ void LevelLoader::DrawStreaming() {
         ImGui::TableNextColumn();
         const bool resident = streaming_.loadedLevel.Of(level) != nullptr;
         ui::StatusText(streaming_.packageName.Of(level).ToString(),
-                       resident ? ImGui::GetStyleColorVec4(ImGuiCol_Text) : ui::palette::kMuted);
+                       ImGui::GetStyleColorVec4(resident ? ImGuiCol_Text : ImGuiCol_TextDisabled));
         ImGui::TableNextColumn();
         bool loaded = streaming_.shouldBeLoaded.Get(level);
         if (ImGui::Checkbox("##loaded", &loaded)) {

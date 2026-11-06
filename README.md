@@ -2,6 +2,8 @@
 
 Developer tools for the original Life is Strange (2015, Steam). LISUtils loads into the game as a `dinput8.dll` proxy and adds an in-game menu built on the engine's own reflection data.
 
+The menu is drawn with the game's own interface art and HelvetiHand handwriting font. Both are read at runtime from your installed copy of the game, so the repository contains no game assets.
+
 ## Features
 
 - **Freecam**: detached camera with mouse look, adjustable speed, field of view and roll. While active, player input is suspended.
@@ -63,7 +65,7 @@ The output is `build/win32/Release/dinput8.dll`. `scripts/Deploy.ps1` copies it 
 
 The engine's object and name tables are located at startup by scanning the executable's data section. `UObject::ProcessEvent` is identified in the object vtable by its function-flag check. All game access goes through runtime reflection: classes, properties and functions are resolved by name. Every member a feature depends on is validated before that feature is enabled, so a mismatch disables the feature rather than crashing the game.
 
-The overlay is rendered from a Direct3D 9 `Present` hook. The interface itself is built on the game thread, so it can read and write engine objects safely. Game input is filtered at the DirectInput and window-message level while the menu or freecam is active.
+The overlay is rendered from a Direct3D 9 `Present` hook. Menu art is drawn straight from the textures of the loaded Scaleform menus. The handwriting font is rebuilt from the engine's distance-field glyph pages when the overlay starts. If either can't be read, the menu falls back to system fonts and plain panels. The interface itself is built on the game thread, so it can read and write engine objects safely. Game input is filtered at the DirectInput and window-message level while the menu or freecam is active.
 
 ## Disclaimer
 

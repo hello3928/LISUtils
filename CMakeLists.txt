@@ -17,6 +17,7 @@ include(cmake/Dependencies.cmake)
 add_library(lisutils SHARED
     src/Main.cpp
     src/App.cpp
+    src/assets/GameAssets.cpp
     src/core/ActionQueue.cpp
     src/core/Config.cpp
     src/core/Hook.cpp

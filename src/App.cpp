@@ -26,10 +26,22 @@ constexpr std::chrono::seconds kEngineTimeout{180};
 constexpr std::chrono::milliseconds kPollInterval{500};
 constexpr std::chrono::seconds kWelcomeDuration{8};
 constexpr float kMaximumFrameTime = 0.25F;
+constexpr std::chrono::seconds kOverlayRetryInterval{1};
+constexpr std::chrono::seconds kFontWaitLimit{20};
 constexpr wchar_t kHotkeySection[] = L"Hotkeys";
 constexpr wchar_t kInterfaceSection[] = L"Interface";
 constexpr std::wstring_view kHostExecutable = L"LifeIsStrange.exe";
-constexpr float kSidebarWidth = 250.0F;
+constexpr float kSidebarWidth = 260.0F;
+constexpr float kTitleTextSize = 54.0F;
+constexpr float kStarSize = 52.0F;
+constexpr float kSubtitleTextSize = 30.0F;
+constexpr float kStatusMargin = 18.0F;
+constexpr float kStatusNoteInset = 26.0F;
+constexpr float kStatusTextSize = 25.0F;
+constexpr ImVec2 kStatusNoteSize{210.0F, 200.0F};
+constexpr float kPaperMarginRatio = 0.11F;
+constexpr float kPaperPadding = 46.0F;
+constexpr ImVec2 kTapeSize{170.0F, 52.0F};
 constexpr float kSidebarGap = 26.0F;
 constexpr float kMargin = 44.0F;
 constexpr float kPromptGap = 18.0F;
@@ -129,6 +141,7 @@ std::expected<void, std::string> App::Start() {
     }
     context_.emplace(features::Context{*game_, events_, input_, actions_, settings_});
     features_ = std::make_unique<Features>(*context_);
+    assets_.emplace();
     for (const features::Feature* feature : features_->All()) {
         if (!feature->IsAvailable()) {
             core::Log::Warning("{} is unavailable", feature->Name());
@@ -173,7 +186,8 @@ void App::OnFrame() {
     const auto now = std::chrono::steady_clock::now();
     const float deltaSeconds = std::min(std::chrono::duration<float>(now - lastFrame_).count(), kMaximumFrameTime);
     lastFrame_ = now;
-    if (!overlay_.EnsureInitialized()) {
+    assets_->Refresh();
+    if (!overlay_.IsInitialized() && !InitializeOverlay(now)) {
         return;
     }
     HandleHotkeys();
@@ -191,6 +205,30 @@ void App::OnFrame() {
         }
     });
     actions_.Drain();
+}
+
+bool App::InitializeOverlay(std::chrono::steady_clock::time_point now) {
+    if (firstFrame_ == std::chrono::steady_clock::time_point{}) {
+        firstFrame_ = now;
+    }
+    if (now < nextOverlayAttempt_) {
+        return false;
+    }
+    nextOverlayAttempt_ = now + kOverlayRetryInterval;
+    std::optional<assets::FontSource> handwriting = assets_->HandwritingFont();
+    if (!handwriting && now - firstFrame_ < kFontWaitLimit) {
+        return false;
+    }
+    if (!overlay_.EnsureInitialized(handwriting)) {
+        return false;
+    }
+    std::size_t resolved = 0;
+    for (std::size_t index = 0; index < static_cast<std::size_t>(assets::SpriteId::Count); ++index) {
+        resolved += assets_->Get(static_cast<assets::SpriteId>(index)).IsValid() ? 1 : 0;
+    }
+    core::Log::Info("game interface art: {} of {} pieces resolved", resolved,
+                    static_cast<std::size_t>(assets::SpriteId::Count));
+    return true;
 }
 
 void App::LoadHotkeys() {
@@ -286,20 +324,33 @@ void App::DrawStatus() {
     if (modes.empty() && !welcome) {
         return;
     }
-    ImGui::SetNextWindowPos({18.0F, 18.0F}, ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.45F);
+    std::vector<std::string> lines;
+    if (modes.empty()) {
+        lines.emplace_back("LISUtils is ready");
+        lines.push_back(std::format("press {} for the menu", core::VirtualKeyName(hotkeys_.front().key)));
+    }
+    for (const std::string_view mode : modes) {
+        lines.emplace_back(mode);
+    }
+    const assets::Sprite& note = assets_->Get(assets::SpriteId::StickyNote);
+    ImGui::SetNextWindowPos({kStatusMargin, kStatusMargin}, ImGuiCond_Always);
+    ImGui::SetNextWindowSize(note.IsValid() ? kStatusNoteSize : ImVec2{0.0F, 0.0F}, ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(note.IsValid() ? 0.0F : 0.45F);
     if (ImGui::Begin("##status", nullptr, kStatusFlags)) {
-        if (modes.empty()) {
-            ImGui::Text("LISUtils loaded. Press %s to open the menu.",
-                        core::VirtualKeyName(hotkeys_.front().key).c_str());
+        if (note.IsValid()) {
+            const ImVec2 origin = ImGui::GetWindowPos();
+            ui::DrawSpriteRotated(ImGui::GetBackgroundDrawList(), note,
+                                  {origin.x + kStatusNoteSize.x * 0.5F, origin.y + kStatusNoteSize.y * 0.5F},
+                                  kStatusNoteSize, -0.05F);
+            ImGui::SetCursorPos({kStatusNoteInset, kStatusNoteInset});
         }
-        for (std::size_t index = 0; index < modes.size(); ++index) {
-            if (index > 0) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("|");
-                ImGui::SameLine();
+        for (const std::string& line : lines) {
+            if (note.IsValid()) {
+                ImGui::SetCursorPosX(kStatusNoteInset);
+                ui::Handwriting(line, kStatusTextSize, ui::palette::kInk);
+            } else {
+                ui::StatusText(line, ui::palette::kHighlight);
             }
-            ui::StatusText(modes[index], ui::palette::kAccent);
         }
     }
     ImGui::End();
@@ -322,12 +373,7 @@ void App::DrawMenu() {
         ImGui::SameLine(0.0F, kMargin);
         ImGui::BeginGroup();
         const float footerHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
-        ImGui::PushStyleColor(ImGuiCol_ChildBg, ui::palette::kPanel);
-        if (ImGui::BeginChild("content", {contentWidth, -footerHeight}, ImGuiChildFlags_AlwaysUseWindowPadding)) {
-            DrawSection();
-        }
-        ImGui::EndChild();
-        ImGui::PopStyleColor();
+        DrawPaper(contentWidth, ImGui::GetContentRegionAvail().y - footerHeight);
         DrawFooter();
         ImGui::EndGroup();
     }
@@ -338,20 +384,58 @@ void App::DrawMenu() {
     }
 }
 
+void App::DrawPaper(float contentWidth, float height) {
+    const assets::Sprite& paper = assets_->Get(assets::SpriteId::Paper);
+    const ImVec2 padding =
+        paper.IsValid() ? ImVec2{contentWidth * kPaperMarginRatio, kPaperPadding} : ImGui::GetStyle().WindowPadding;
+    const ImVec2 origin = ImGui::GetCursorScreenPos();
+    ImDrawList* drawList = ImGui::GetWindowDrawList();
+    if (paper.IsValid()) {
+        ui::DrawSprite(drawList, paper, origin, {origin.x + contentWidth, origin.y + height});
+        ui::DrawSpriteRotated(drawList, assets_->Get(assets::SpriteId::Tape),
+                              {origin.x + contentWidth * 0.5F, origin.y + 8.0F}, kTapeSize, 0.03F,
+                              IM_COL32(255, 255, 255, 235));
+        ui::DrawSpriteRotated(drawList, assets_->Get(assets::SpriteId::Star),
+                              {origin.x + contentWidth - kStarSize * 0.9F, origin.y + kStarSize * 0.8F},
+                              {kStarSize, kStarSize}, 0.28F);
+    } else {
+        drawList->AddRectFilled(origin, {origin.x + contentWidth, origin.y + height},
+                                ImGui::GetColorU32(ui::palette::kPanel), ImGui::GetStyle().ChildRounding);
+    }
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, padding);
+    std::optional<ui::PaperScope> ink;
+    if (paper.IsValid()) {
+        ink.emplace();
+    }
+    if (ImGui::BeginChild("content", {contentWidth, height}, ImGuiChildFlags_AlwaysUseWindowPadding)) {
+        DrawSection();
+    }
+    ImGui::EndChild();
+    ink.reset();
+    ImGui::PopStyleVar();
+}
+
 void App::DrawSidebar() {
     if (!ImGui::BeginChild("sidebar", {kSidebarWidth, 0.0F})) {
         ImGui::EndChild();
         return;
     }
-    const ui::FontSet& fonts = ui::Fonts();
-    ImGui::PushFont(fonts.title);
-    ImGui::TextUnformatted("LISUtils");
-    ImGui::PopFont();
+    const assets::Sprite& logo = assets_->Get(assets::SpriteId::Logo);
+    if (logo.IsValid()) {
+        const ImVec2 origin = ImGui::GetCursorScreenPos();
+        const float height = kSidebarWidth * logo.height / logo.width;
+        ui::DrawSprite(ImGui::GetWindowDrawList(), logo, origin, {origin.x + kSidebarWidth, origin.y + height});
+        ImGui::Dummy({kSidebarWidth, height});
+        ui::Handwriting("utils", kSubtitleTextSize, ui::palette::kHighlight);
+    } else {
+        ui::Handwriting("LISUtils", kTitleTextSize, ui::palette::kChalk);
+    }
     ui::Hint("developer tools for Life is Strange");
     ImGui::Dummy({0.0F, kSidebarGap});
+    const assets::Sprite& strip = assets_->Get(assets::SpriteId::NavStrip);
     for (std::size_t index = 0; index < kSectionNames.size(); ++index) {
         const auto section = static_cast<Section>(index);
-        if (ui::NavItem(kSectionNames[index], section_ == section)) {
+        if (ui::NavItem(kSectionNames[index], section_ == section, strip)) {
             section_ = section;
         }
     }
@@ -465,7 +549,7 @@ void App::DrawLog() {
     for (const core::LogEntry& entry : core::Log::Recent()) {
         const ImVec4 color = entry.level == core::LogLevel::Error     ? ui::palette::kNegative
                              : entry.level == core::LogLevel::Warning ? ui::palette::kWarning
-                                                                      : ui::palette::kMuted;
+                                                                      : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
         ui::StatusText(entry.text, color);
     }
     ImGui::EndChild();

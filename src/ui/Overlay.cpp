@@ -44,6 +44,7 @@ void Overlay::OnPresent(IDirect3DDevice9* device) {
     if (device_ != device) {
         AttachRenderer(device);
     }
+    FinalizeFonts(*ImGui::GetIO().Fonts);
     ImGui_ImplDX9_NewFrame();
     rendererReady_.store(true);
     if (frameReady_) {
@@ -66,7 +67,7 @@ void Overlay::OnReset(IDirect3DDevice9* device, render::ResetStage stage, bool s
     }
 }
 
-bool Overlay::EnsureInitialized() {
+bool Overlay::EnsureInitialized(const std::optional<assets::FontSource>& handwriting) {
     if (contextReady_.load()) {
         return true;
     }
@@ -80,7 +81,7 @@ bool Overlay::EnsureInitialized() {
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = layoutFile_.c_str();
     io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange | ImGuiConfigFlags_NavEnableKeyboard;
-    LoadFonts(io);
+    LoadFonts(io, handwriting);
     ApplyTheme(ImGui::GetStyle());
     ImGui_ImplWin32_Init(window);
     input_.Attach(window, [this](HWND target, UINT message, WPARAM wParam, LPARAM lParam) {
@@ -140,6 +141,9 @@ void Overlay::Render(IDirect3DDevice9* device) {
         device->SetRenderTarget(0, backBuffer.Get());
     }
     device->SetRenderState(D3DRS_SRGBWRITEENABLE, FALSE);
+    device->SetSamplerState(0, D3DSAMP_SRGBTEXTURE, FALSE);
+    device->SetSamplerState(0, D3DSAMP_ADDRESSU, D3DTADDRESS_CLAMP);
+    device->SetSamplerState(0, D3DSAMP_ADDRESSV, D3DTADDRESS_CLAMP);
     if (SUCCEEDED(device->BeginScene())) {
         ImGui_ImplDX9_RenderDrawData(ImGui::GetDrawData());
         device->EndScene();

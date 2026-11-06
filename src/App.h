@@ -1,5 +1,6 @@
 #pragma once
 
+#include "assets/GameAssets.h"
 #include "core/ActionQueue.h"
 #include "core/Config.h"
 #include "features/Cinematics.h"
@@ -88,6 +89,7 @@ private:
     [[nodiscard]] std::expected<void, std::string> Start();
     [[nodiscard]] std::expected<void, std::string> WaitForGame();
     void OnFrame();
+    [[nodiscard]] bool InitializeOverlay(std::chrono::steady_clock::time_point now);
     void HandleHotkeys();
     void Trigger(Action action);
     void CaptureRebind();
@@ -96,6 +98,7 @@ private:
     void DrawSidebar();
     void DrawSection();
     void DrawFooter();
+    void DrawPaper(float contentWidth, float height);
     [[nodiscard]] std::string KeyName(Action action) const;
     void DrawStatus();
     void DrawSettings();
@@ -111,11 +114,14 @@ private:
     std::optional<ue::Game> game_;
     std::optional<features::Context> context_;
     std::unique_ptr<Features> features_;
+    std::optional<assets::GameAssets> assets_;
 
     std::array<Hotkey, static_cast<std::size_t>(Action::Count)> hotkeys_;
     std::optional<std::size_t> rebinding_;
     std::chrono::steady_clock::time_point lastFrame_;
     std::chrono::steady_clock::time_point readyAt_;
+    std::chrono::steady_clock::time_point firstFrame_;
+    std::chrono::steady_clock::time_point nextOverlayAttempt_;
     Section section_ = Section::Camera;
     float menuFade_ = 0.0F;
     float scale_ = 1.0F;
