@@ -23,6 +23,7 @@ constexpr float kRollRate = 45.0F;
 constexpr float kFovRate = 25.0F;
 constexpr float kMinimumFov = 10.0F;
 constexpr float kMaximumFov = 130.0F;
+constexpr float kAimDistance = 1000.0F;
 constexpr wchar_t kSection[] = L"Freecam";
 
 float Radians(float degrees) noexcept {
@@ -44,6 +45,7 @@ Freecam::Freecam(Context& context) : Feature(context) {
             .location = ue::Member<ue::FVector>(povOffset + schema.Offset(povType, "Location")),
             .rotation = ue::Member<ue::FRotator>(povOffset + schema.Offset(povType, "Rotation")),
             .fov = ue::Member<float>(povOffset + schema.Offset(povType, "FOV")),
+            .target = ue::Member<ue::FVector>(povOffset + schema.Offset(povType, "TargetLocation")),
         };
     };
     cameraViews_ = {
@@ -84,16 +86,14 @@ void Freecam::SubscribeEvents(std::vector<ue::UFunction*> viewPoints, std::vecto
         if (active_ && call.self == Game().PlayerController()) {
             call.At<ue::FVector>(viewPointLocationOffset_) = location_;
             call.At<ue::FRotator>(viewPointRotationOffset_) = ViewRotation();
+            if (ue::UObject* camera = Game().Camera(); camera != nullptr) {
+                ApplyToCamera(camera);
+            }
         }
     });
     events.Subscribe(cameraUpdates, ue::EventPhase::After, [this](const ue::EventCall& call) {
         if (active_ && call.self == Game().Camera()) {
-            const ue::FRotator rotation = ViewRotation();
-            for (const ViewLayout& view : cameraViews_) {
-                view.location.Of(call.self) = location_;
-                view.rotation.Of(call.self) = rotation;
-                view.fov.Of(call.self) = fov_;
-            }
+            ApplyToCamera(call.self);
         }
     });
     events.Subscribe(fovQueries, ue::EventPhase::After, [this](const ue::EventCall& call) {
@@ -101,6 +101,25 @@ void Freecam::SubscribeEvents(std::vector<ue::UFunction*> viewPoints, std::vecto
             call.At<float>(call.function->returnValueOffset) = fov_;
         }
     });
+}
+
+void Freecam::ApplyToCamera(ue::UObject* camera) const noexcept {
+    const ue::FRotator rotation = ViewRotation();
+    const ue::FVector forward = Forward();
+    const ue::FVector target{location_.x + forward.x * kAimDistance, location_.y + forward.y * kAimDistance,
+                             location_.z + forward.z * kAimDistance};
+    for (const ViewLayout& view : cameraViews_) {
+        view.location.Of(camera) = location_;
+        view.rotation.Of(camera) = rotation;
+        view.fov.Of(camera) = fov_;
+        view.target.Of(camera) = target;
+    }
+}
+
+ue::FVector Freecam::Forward() const noexcept {
+    const float pitch = Radians(pitch_);
+    const float yaw = Radians(yaw_);
+    return {std::cos(pitch) * std::cos(yaw), std::cos(pitch) * std::sin(yaw), std::sin(pitch)};
 }
 
 void Freecam::SetActive(bool active) {
@@ -191,9 +210,8 @@ void Freecam::Move(float deltaSeconds) {
         multiplier = kSlowMultiplier;
     }
     const float step = speed_ * multiplier * deltaSeconds;
-    const float pitch = Radians(pitch_);
     const float yaw = Radians(yaw_);
-    const ue::FVector forwardAxis{std::cos(pitch) * std::cos(yaw), std::cos(pitch) * std::sin(yaw), std::sin(pitch)};
+    const ue::FVector forwardAxis = Forward();
     const ue::FVector rightAxis{-std::sin(yaw), std::cos(yaw), 0.0F};
     location_.x += (forwardAxis.x * forward + rightAxis.x * right) * step;
     location_.y += (forwardAxis.y * forward + rightAxis.y * right) * step;
@@ -243,7 +261,7 @@ void Freecam::DrawPanel() {
     }
     ImGui::EndDisabled();
 
-    ImGui::SeparatorText("Controls");
+    ui::Subheading("Controls");
     ui::KeyHint("W A S D", "Move");
     ui::KeyHint("E / Q", "Up / down");
     ui::KeyHint("Shift / Alt", "Fast / slow");

@@ -29,6 +29,19 @@ constexpr float kMaximumFrameTime = 0.25F;
 constexpr wchar_t kHotkeySection[] = L"Hotkeys";
 constexpr wchar_t kInterfaceSection[] = L"Interface";
 constexpr std::wstring_view kHostExecutable = L"LifeIsStrange.exe";
+constexpr float kSidebarWidth = 250.0F;
+constexpr float kSidebarGap = 26.0F;
+constexpr float kMargin = 44.0F;
+constexpr float kPromptGap = 18.0F;
+constexpr float kSlideDistance = 28.0F;
+constexpr float kFadeSpeed = 7.0F;
+constexpr float kContentRatio = 0.38F;
+constexpr float kWideContentRatio = 0.62F;
+constexpr float kMinimumContent = 540.0F;
+constexpr float kMaximumContent = 780.0F;
+constexpr std::array kSectionNames{"Camera", "Player", "World", "Inspector", "Console", "Settings"};
+constexpr ImGuiWindowFlags kMenuFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground |
+                                        ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove;
 constexpr ImGuiWindowFlags kStatusFlags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs |
                                           ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings |
                                           ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav;
@@ -164,6 +177,7 @@ void App::OnFrame() {
         return;
     }
     HandleHotkeys();
+    menuFade_ = overlay_.IsVisible() ? std::min(1.0F, menuFade_ + deltaSeconds * kFadeSpeed) : 0.0F;
     for (features::Feature* feature : features_->All()) {
         feature->Tick(deltaSeconds);
     }
@@ -272,8 +286,8 @@ void App::DrawStatus() {
     if (modes.empty() && !welcome) {
         return;
     }
-    ImGui::SetNextWindowPos({12.0F, 12.0F}, ImGuiCond_Always);
-    ImGui::SetNextWindowBgAlpha(0.55F);
+    ImGui::SetNextWindowPos({18.0F, 18.0F}, ImGuiCond_Always);
+    ImGui::SetNextWindowBgAlpha(0.45F);
     if (ImGui::Begin("##status", nullptr, kStatusFlags)) {
         if (modes.empty()) {
             ImGui::Text("LISUtils loaded. Press %s to open the menu.",
@@ -292,55 +306,116 @@ void App::DrawStatus() {
 }
 
 void App::DrawMenu() {
-    ImGui::SetNextWindowSize({780.0F, 580.0F}, ImGuiCond_FirstUseEver);
-    ImGui::SetNextWindowPos({60.0F, 60.0F}, ImGuiCond_FirstUseEver);
-    bool open = true;
-    if (!ImGui::Begin("LISUtils", &open, ImGuiWindowFlags_NoCollapse)) {
-        ImGui::End();
-        return;
-    }
-    if (ImGui::BeginTabBar("sections")) {
-        Features& features = *features_;
-        if (ImGui::BeginTabItem("Camera")) {
-            features.freecam.Draw();
-            ImGui::SeparatorText("Photo mode");
-            features.photo.Draw();
-            ImGui::EndTabItem();
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    const bool wide = section_ == Section::Inspector || section_ == Section::Console;
+    const float contentWidth = wide ? viewport->Size.x * kWideContentRatio
+                                    : std::clamp(viewport->Size.x * kContentRatio, kMinimumContent, kMaximumContent);
+    const float menuWidth = kSidebarWidth + kMargin + contentWidth;
+    const float slide = (1.0F - menuFade_) * kSlideDistance;
+
+    ui::Backdrop(menuFade_, std::min(1.0F, (menuWidth + kMargin * 4.0F) / viewport->Size.x));
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, menuFade_);
+    ImGui::SetNextWindowPos({viewport->Pos.x + kMargin - slide, viewport->Pos.y + kMargin}, ImGuiCond_Always);
+    ImGui::SetNextWindowSize({menuWidth, viewport->Size.y - kMargin * 2.0F}, ImGuiCond_Always);
+    if (ImGui::Begin("##lisutils", nullptr, kMenuFlags)) {
+        DrawSidebar();
+        ImGui::SameLine(0.0F, kMargin);
+        ImGui::BeginGroup();
+        const float footerHeight = ImGui::GetFrameHeightWithSpacing() + ImGui::GetStyle().ItemSpacing.y;
+        ImGui::PushStyleColor(ImGuiCol_ChildBg, ui::palette::kPanel);
+        if (ImGui::BeginChild("content", {contentWidth, -footerHeight}, ImGuiChildFlags_AlwaysUseWindowPadding)) {
+            DrawSection();
         }
-        if (ImGui::BeginTabItem("Player")) {
-            features.teleport.Draw();
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("World")) {
-            ImGui::SeparatorText("Time");
-            features.time.Draw();
-            ImGui::SeparatorText("Cinematics");
-            features.cinematics.Draw();
-            features.levels.Draw();
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Inspector")) {
-            features.inspector.Draw();
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Console")) {
-            features.console.Draw();
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Settings")) {
-            DrawSettings();
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
+        ImGui::EndChild();
+        ImGui::PopStyleColor();
+        DrawFooter();
+        ImGui::EndGroup();
     }
     ImGui::End();
-    if (!open) {
+    ImGui::PopStyleVar();
+    if (ImGui::IsKeyPressed(ImGuiKey_Escape) && !overlay_.WantsTextInput() && !rebinding_) {
         overlay_.SetVisible(false);
     }
 }
 
+void App::DrawSidebar() {
+    if (!ImGui::BeginChild("sidebar", {kSidebarWidth, 0.0F})) {
+        ImGui::EndChild();
+        return;
+    }
+    const ui::FontSet& fonts = ui::Fonts();
+    ImGui::PushFont(fonts.title);
+    ImGui::TextUnformatted("LISUtils");
+    ImGui::PopFont();
+    ui::Hint("developer tools for Life is Strange");
+    ImGui::Dummy({0.0F, kSidebarGap});
+    for (std::size_t index = 0; index < kSectionNames.size(); ++index) {
+        const auto section = static_cast<Section>(index);
+        if (ui::NavItem(kSectionNames[index], section_ == section)) {
+            section_ = section;
+        }
+    }
+    ImGui::SetCursorPosY(ImGui::GetWindowHeight() - ImGui::GetTextLineHeightWithSpacing());
+    ImGui::TextDisabled("version %s", LISUTILS_VERSION);
+    ImGui::EndChild();
+}
+
+void App::DrawSection() {
+    Features& features = *features_;
+    switch (section_) {
+    case Section::Camera:
+        ui::SectionTitle("Freecam");
+        features.freecam.Draw();
+        ui::SectionTitle("Photo mode");
+        features.photo.Draw();
+        break;
+    case Section::Player:
+        ui::SectionTitle("Player");
+        features.teleport.Draw();
+        break;
+    case Section::World:
+        ui::SectionTitle("Time");
+        features.time.Draw();
+        ui::SectionTitle("Cinematics");
+        features.cinematics.Draw();
+        ui::SectionTitle("Levels");
+        features.levels.Draw();
+        break;
+    case Section::Inspector:
+        features.inspector.Draw();
+        break;
+    case Section::Console:
+        features.console.Draw();
+        break;
+    case Section::Settings:
+        DrawSettings();
+        break;
+    case Section::Count:
+        break;
+    }
+}
+
+void App::DrawFooter() {
+    ImGui::Spacing();
+    const auto prompt = [this](Action action, std::string_view label) {
+        ui::KeyHint(KeyName(action), label);
+        ImGui::SameLine(0.0F, kPromptGap);
+    };
+    prompt(Action::ToggleMenu, "Close");
+    prompt(Action::Freecam, "Freecam");
+    prompt(Action::PhotoMode, "Photo mode");
+    prompt(Action::FreezeTime, "Freeze");
+    prompt(Action::Noclip, "Noclip");
+    prompt(Action::SkipCutscene, "Skip");
+    ImGui::NewLine();
+}
+
+std::string App::KeyName(Action action) const {
+    return core::VirtualKeyName(hotkeys_[static_cast<std::size_t>(action)].key);
+}
+
 void App::DrawSettings() {
-    ImGui::SeparatorText("Hotkeys");
+    ui::SectionTitle("Hotkeys");
     if (ImGui::BeginTable("hotkeys", 3, ImGuiTableFlags_SizingStretchProp)) {
         for (std::size_t index = 0; index < hotkeys_.size(); ++index) {
             const Hotkey& hotkey = hotkeys_[index];
@@ -361,7 +436,7 @@ void App::DrawSettings() {
         ImGui::EndTable();
     }
 
-    ImGui::SeparatorText("Interface");
+    ui::SectionTitle("Interface");
     ImGui::SetNextItemWidth(ui::FieldWidth());
     if (ImGui::SliderFloat("Scale", &scale_, 0.75F, 2.0F, "%.2f")) {
         overlay_.SetScale(scale_);
@@ -373,10 +448,10 @@ void App::DrawSettings() {
         settings_.SetBool(kInterfaceSection, L"ShowStatus", showStatus_);
     }
 
-    ImGui::SeparatorText("SDK dump");
+    ui::SectionTitle("SDK dump");
     features_->dumper.Draw();
 
-    ImGui::SeparatorText("Log");
+    ui::SectionTitle("Log");
     DrawLog();
     ui::Hint(std::format("LISUtils {}. Settings are stored in {}.", LISUTILS_VERSION,
                          core::ToUtf8(settings_.Path().wstring())));

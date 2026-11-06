@@ -268,7 +268,7 @@ void Teleport::DrawPanel() {
     }
     ImGui::EndDisabled();
 
-    ImGui::SeparatorText("Movement");
+    ui::Subheading("Movement");
     bool noclip = noclip_;
     if (ImGui::Checkbox("Noclip", &noclip)) {
         Services().actions.Post([this, noclip] { SetNoclip(noclip); });
@@ -288,7 +288,7 @@ void Teleport::DrawPanel() {
 }
 
 void Teleport::DrawPositions() {
-    ImGui::SeparatorText("Saved positions");
+    ui::Subheading("Saved positions");
     ui::Hint(std::format("Positions are stored per map. Current map: {}", positionsMap_));
     ImGui::SetNextItemWidth(ui::FieldWidth());
     const bool submitted =

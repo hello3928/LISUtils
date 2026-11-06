@@ -71,7 +71,7 @@ void LevelLoader::DrawPanel() {
 }
 
 void LevelLoader::DrawMaps() {
-    ImGui::SeparatorText("Maps");
+    ui::Subheading("Maps");
     ImGui::SetNextItemWidth(ui::FieldWidth());
     ImGui::InputTextWithHint("##mapFilter", "Filter", &mapFilter_);
     ImGui::SameLine();
@@ -84,7 +84,7 @@ void LevelLoader::DrawMaps() {
             }
             ImGui::PushID(map.c_str());
             if (ImGui::SmallButton("Open")) {
-                Services().actions.Post([this, map] { OpenMap(map); });
+                pendingMap_ = map;
             }
             ImGui::SameLine();
             ImGui::TextUnformatted(map.c_str());
@@ -92,11 +92,39 @@ void LevelLoader::DrawMaps() {
         }
     }
     ImGui::EndChild();
-    ui::Hint("Opening a map skips the story flow that normally leads there, so scripted scenes may not start.");
+    DrawOpenConfirmation();
+}
+
+void LevelLoader::DrawOpenConfirmation() {
+    constexpr const char* kPopup = "Open map";
+    if (!pendingMap_.empty() && !ImGui::IsPopupOpen(kPopup)) {
+        ImGui::OpenPopup(kPopup);
+    }
+    if (!ImGui::BeginPopupModal(kPopup, nullptr,
+                                ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings)) {
+        return;
+    }
+    ImGui::Text("Open %s?", pendingMap_.c_str());
+    ImGui::PushTextWrapPos(ImGui::GetFontSize() * 26.0F);
+    ui::StatusText("Loading a map outside the story flow can crash the game with a fatal error. Save your progress "
+                   "first.",
+                   ui::palette::kWarning);
+    ImGui::PopTextWrapPos();
+    if (ImGui::Button("Open anyway")) {
+        Services().actions.Post([this, map = pendingMap_] { OpenMap(map); });
+        pendingMap_.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel") || ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+        pendingMap_.clear();
+        ImGui::CloseCurrentPopup();
+    }
+    ImGui::EndPopup();
 }
 
 void LevelLoader::DrawStreaming() {
-    ImGui::SeparatorText("Streaming levels");
+    ui::Subheading("Streaming levels");
     ue::UObject* worldInfo = Game().WorldInfo();
     if (!streaming_.available || worldInfo == nullptr) {
         ui::Hint("Streaming information is not available here.");
@@ -139,7 +167,7 @@ void LevelLoader::DrawStreaming() {
 }
 
 void LevelLoader::DrawStory() {
-    ImGui::SeparatorText("Story and checkpoints");
+    ui::Subheading("Story and checkpoints");
     if (ImGui::Button("Save checkpoint")) {
         Services().actions.Post([this] { CallControllerCommand("DebugSaveCheckpoint"); });
     }

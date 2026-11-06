@@ -32,6 +32,7 @@ private:
     void DrawStreaming();
     void DrawStory();
     void OpenMap(const std::string& map);
+    void DrawOpenConfirmation();
     void CallControllerCommand(std::string_view name);
     void ToggleFact(const std::string& fact);
     void BackupSaves();
@@ -40,6 +41,7 @@ private:
     std::vector<std::string> maps_;
     std::vector<std::string> packages_;
     std::string mapFilter_;
+    std::string pendingMap_;
     std::string factName_;
     std::string status_;
     bool showAllPackages_ = false;

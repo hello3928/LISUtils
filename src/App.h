@@ -58,6 +58,8 @@ private:
         Count
     };
 
+    enum class Section : std::uint8_t { Camera, Player, World, Inspector, Console, Settings, Count };
+
     struct Hotkey {
         Action action;
         const wchar_t* setting;
@@ -91,6 +93,10 @@ private:
     void CaptureRebind();
     void LoadHotkeys();
     void DrawMenu();
+    void DrawSidebar();
+    void DrawSection();
+    void DrawFooter();
+    [[nodiscard]] std::string KeyName(Action action) const;
     void DrawStatus();
     void DrawSettings();
     void DrawLog();
@@ -110,6 +116,8 @@ private:
     std::optional<std::size_t> rebinding_;
     std::chrono::steady_clock::time_point lastFrame_;
     std::chrono::steady_clock::time_point readyAt_;
+    Section section_ = Section::Camera;
+    float menuFade_ = 0.0F;
     float scale_ = 1.0F;
     bool showStatus_ = true;
 };

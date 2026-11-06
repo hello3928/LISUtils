@@ -31,12 +31,15 @@ private:
         ue::Member<ue::FVector> location;
         ue::Member<ue::FRotator> rotation;
         ue::Member<float> fov;
+        ue::Member<ue::FVector> target;
     };
 
     void SubscribeEvents(std::vector<ue::UFunction*> viewPoints, std::vector<ue::UFunction*> cameraUpdates,
                          std::vector<ue::UFunction*> fovQueries);
     void CaptureCurrentView();
     void SetControllerInputIgnored(bool ignored);
+    void ApplyToCamera(ue::UObject* camera) const noexcept;
+    [[nodiscard]] ue::FVector Forward() const noexcept;
     void Move(float deltaSeconds);
     void SaveSettings() const;
     [[nodiscard]] ue::FRotator ViewRotation() const noexcept;

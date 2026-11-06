@@ -8,7 +8,6 @@
 #include <imgui_impl_dx9.h>
 #include <imgui_impl_win32.h>
 
-#include <array>
 #include <wrl/client.h>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND window, UINT message, WPARAM wParam, LPARAM lParam);
@@ -18,20 +17,6 @@ namespace lis::ui {
 namespace {
 
 using Microsoft::WRL::ComPtr;
-
-constexpr float kBaseFontSize = 17.0F;
-
-void LoadFonts(ImGuiIO& io) {
-    std::array<wchar_t, MAX_PATH> windows{};
-    const UINT length = GetWindowsDirectoryW(windows.data(), static_cast<UINT>(windows.size()));
-    const std::filesystem::path fonts = std::filesystem::path(std::wstring_view(windows.data(), length)) / L"Fonts";
-    const std::string regular = core::ToUtf8((fonts / L"segoeui.ttf").wstring());
-    if (std::filesystem::exists(fonts / L"segoeui.ttf") &&
-        io.Fonts->AddFontFromFileTTF(regular.c_str(), kBaseFontSize) != nullptr) {
-        return;
-    }
-    io.Fonts->AddFontDefault();
-}
 
 }
 
